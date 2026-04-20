@@ -42,9 +42,12 @@ def search_tc(query):
         "user-agent": "Mozilla/5.0"
     }
 
-    r = requests.get(TC_SEARCH_URL, params=params, headers=headers, timeout=20)
+    print(f"[DEBUG] search_tc start | query={query}")
+    r = requests.get(TC_SEARCH_URL, params=params, headers=headers, timeout=8)
     r.raise_for_status()
-    return r.json()
+    data = r.json()
+    print(f"[DEBUG] search_tc done | items={len(data.get('items', []))}")
+    return data
 
 
 def search_en(query):
@@ -56,9 +59,12 @@ def search_en(query):
         "fields": "Name"
     }
 
-    r = requests.get(XIVAPI_SEARCH_URL, params=params, timeout=20)
+    print(f"[DEBUG] search_en start | query={query}")
+    r = requests.get(XIVAPI_SEARCH_URL, params=params, timeout=8)
     r.raise_for_status()
-    return r.json()
+    data = r.json()
+    print(f"[DEBUG] search_en done | results={len(data.get('results', []))}")
+    return data
 
 
 def is_english_query(query):
@@ -103,9 +109,13 @@ def get_price(world_name, item_id, listings=5):
     url = f"{UNIVERSALIS_URL}/{world_name}/{item_id}"
     params = {"listings": listings}
 
-    r = requests.get(url, params=params, timeout=20)
+    print(f"[DEBUG] get_price start | world={world_name} | item_id={item_id}")
+    r = requests.get(url, params=params, timeout=12)
+    print(f"[DEBUG] get_price response | world={world_name} | status={r.status_code} | url={r.url}")
     r.raise_for_status()
-    return r.json()
+    data = r.json()
+    print(f"[DEBUG] get_price done | world={world_name} | listings={len(data.get('listings', []))}")
+    return data
 
 
 def format_all_worlds(world_data):
@@ -143,24 +153,34 @@ def format_all_worlds(world_data):
 
 
 def full_search_tc_worlds_text(query):
+    print(f"[DEBUG] full_search start | query={query}")
+
     if is_english_query(query):
+        print("[DEBUG] using english api")
         data = search_en(query)
     else:
+        print("[DEBUG] using tc api")
         data = search_tc(query)
 
     picked = pick_items(data, query, top_n=3)
+    print(f"[DEBUG] pick_items done | picked_count={len(picked)}")
 
     if not picked:
+        print(f"[DEBUG] no item found | query={query}")
         return f"找不到「{query}」"
 
     item = picked[0]
+    print(f"[DEBUG] picked item | name={item['name']} | id={item['id']}")
 
     world_data = []
     for world_name in TC_WORLDS:
         try:
+            print(f"[DEBUG] world query start | world={world_name} | item_id={item['id']}")
             market = get_price(world_name, item["id"], listings=5)
+            print(f"[DEBUG] world query success | world={world_name} | listings={len(market.get('listings', []))}")
             world_data.append((world_name, market))
-        except Exception:
+        except Exception as e:
+            print(f"[DEBUG] world query failed | world={world_name} | error={repr(e)}")
             world_data.append((world_name, {"listings": []}))
 
     lines = []
@@ -168,6 +188,7 @@ def full_search_tc_worlds_text(query):
     lines.append("-" * 30)
     lines.extend(format_all_worlds(world_data))
 
+    print(f"[DEBUG] full_search done | query={query}")
     return "\n".join(lines).strip()
 
 
@@ -202,6 +223,8 @@ async def on_message(message):
     text = text.replace(f"<@!{bot.user.id}>", "")
     text = text.strip()
 
+    print(f"[DEBUG] message received | raw_text={text}")
+
     if not text:
         await message.channel.send(
             f"{message.author.mention} 哈比卜，報上物品名字，我替你看各世界價格。",
@@ -211,6 +234,7 @@ async def on_message(message):
 
     if is_price_query(text):
         query = extract_query(text)
+        print(f"[DEBUG] query extracted | query={query}")
 
         if not query:
             await message.channel.send(
@@ -236,6 +260,7 @@ async def on_message(message):
                 )
 
         except Exception as e:
+            print(f"[DEBUG] on_message error | error={repr(e)}")
             await message.channel.send(
                 f"{message.author.mention} 查詢失敗：{e}",
                 allowed_mentions=discord.AllowedMentions(users=True)

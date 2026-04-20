@@ -25,6 +25,7 @@ TC_WORLDS = [
     "奧汀",
 ]
 
+
 def search_tc(query):
     params = {
         "sheets": "Items",
@@ -44,19 +45,25 @@ def search_tc(query):
     r.raise_for_status()
     return r.json()
 
+
 def pick_items(data, query, top_n=3):
     items = data.get("items", [])
+
     exact = [x for x in items if x.get("name") == query]
     if exact:
         return exact[:top_n]
+
     return items[:top_n]
+
 
 def get_price(world_name, item_id, listings=5):
     url = f"{UNIVERSALIS_URL}/{world_name}/{item_id}"
     params = {"listings": listings}
+
     r = requests.get(url, params=params, timeout=20)
     r.raise_for_status()
     return r.json()
+
 
 def format_all_worlds(world_data):
     lines = []
@@ -64,7 +71,8 @@ def format_all_worlds(world_data):
 
     for world_name, data in world_data:
         listings = data.get("listings", [])
-        lines.append(f"")
+
+        lines.append(f"【{world_name}】")
 
         if not listings:
             lines.append("  沒有掛單資料")
@@ -74,17 +82,22 @@ def format_all_worlds(world_data):
         for i, x in enumerate(listings[:5], 1):
             price = f"{x.get('pricePerUnit', 0):,}"
             qty = x.get("quantity", 0)
-            hq_tag = "HQ " if x.get("hq", False) else ""
-            if x.get("hq", False):
+            is_hq = x.get("hq", False)
+
+            if is_hq:
                 all_has_hq = True
+
+            hq_tag = "HQ " if is_hq else ""
             lines.append(f"  {i}. {hq_tag}{price} ({qty}個)")
 
         lines.append("")
 
     if not all_has_hq:
-        lines.insert(0, "（以下皆無HQ商品）\n")
+        lines.insert(0, "")
+        lines.insert(0, "（以下皆無HQ商品）")
 
     return lines
+
 
 def full_search_tc_worlds_text(query):
     data = search_tc(query)
@@ -108,12 +121,14 @@ def full_search_tc_worlds_text(query):
     lines.append("-" * 30)
     lines.extend(format_all_worlds(world_data))
 
-    return "\n".join(lines)
+    return "\n".join(lines).strip()
+
 
 def extract_query(text):
     text = text.strip()
     text = re.sub(r"(查價|價格|物價|查)", "", text)
     return text.strip()
+
 
 def is_price_query(text):
     keywords = ["查價", "價格", "物價", "查"]
@@ -127,9 +142,11 @@ def is_price_query(text):
 
     return False
 
+
 @bot.event
 async def on_ready():
     print(f"Bot 已上線：{bot.user}")
+
 
 @bot.event
 async def on_message(message):
@@ -184,12 +201,14 @@ async def on_message(message):
                 f"{message.author.mention} 查詢失敗：{e}",
                 allowed_mentions=discord.AllowedMentions(users=True)
             )
+
         return
 
     await message.channel.send(
         f"{message.author.mention} 哈比卜，我的朋友，說出物品名，我幫你查價。",
         allowed_mentions=discord.AllowedMentions(users=True)
     )
+
 
 if __name__ == "__main__":
     if not TOKEN:

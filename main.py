@@ -4,6 +4,7 @@ from discord.ext import commands
 import asyncio
 import requests
 import re
+from requests.exceptions import ReadTimeout
 
 TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
 
@@ -109,13 +110,20 @@ def get_price(world_name, item_id, listings=5):
     url = f"{UNIVERSALIS_URL}/{world_name}/{item_id}"
     params = {"listings": listings}
 
-    print(f"[DEBUG] get_price start | world={world_name} | item_id={item_id}")
-    r = requests.get(url, params=params, timeout=12)
-    print(f"[DEBUG] get_price response | world={world_name} | status={r.status_code} | url={r.url}")
-    r.raise_for_status()
-    data = r.json()
-    print(f"[DEBUG] get_price done | world={world_name} | listings={len(data.get('listings', []))}")
-    return data
+    for attempt in range(2):
+        try:
+            print(f"[DEBUG] get_price start | world={world_name} | item_id={item_id} | attempt={attempt + 1}")
+            r = requests.get(url, params=params, timeout=18)
+            print(f"[DEBUG] get_price response | world={world_name} | status={r.status_code} | url={r.url}")
+            r.raise_for_status()
+            data = r.json()
+            print(f"[DEBUG] get_price done | world={world_name} | listings={len(data.get('listings', []))}")
+            return data
+
+        except ReadTimeout as e:
+            print(f"[DEBUG] get_price timeout | world={world_name} | attempt={attempt + 1} | error={repr(e)}")
+            if attempt == 1:
+                raise
 
 
 def format_all_worlds(world_data):
@@ -126,6 +134,16 @@ def format_all_worlds(world_data):
         listings = data.get("listings", [])
 
         lines.append(f"【{world_name}】")
+
+        if data.get("timeout"):
+            lines.append("  查詢逾時")
+            lines.append("")
+            continue
+
+        if data.get("error"):
+            lines.append("  查詢失敗")
+            lines.append("")
+            continue
 
         if not listings:
             lines.append("  沒有掛單資料")
@@ -152,7 +170,7 @@ def format_all_worlds(world_data):
     return lines
 
 
-def full_search_tc_worlds_text(query):
+def full_search_tc_worlds_text(query, progress_callback=None):
     print(f"[DEBUG] full_search start | query={query}")
 
     if is_english_query(query):
@@ -179,9 +197,14 @@ def full_search_tc_worlds_text(query):
             market = get_price(world_name, item["id"], listings=5)
             print(f"[DEBUG] world query success | world={world_name} | listings={len(market.get('listings', []))}")
             world_data.append((world_name, market))
+        except ReadTimeout as e:
+            print(f"[DEBUG] world query timeout | world={world_name} | error={repr(e)}")
+            if progress_callback:
+                progress_callback(f"{world_name}查詢逾時")
+            world_data.append((world_name, {"timeout": True, "listings": []}))
         except Exception as e:
             print(f"[DEBUG] world query failed | world={world_name} | error={repr(e)}")
-            world_data.append((world_name, {"listings": []}))
+            world_data.append((world_name, {"error": True, "listings": []}))
 
     lines = []
     lines.append(f"物品：{item['name']} | ID：{item['id']}")
@@ -243,8 +266,23 @@ async def on_message(message):
             )
             return
 
+        await message.channel.send(
+            f"{message.author.mention} 開始查詢各世界",
+            allowed_mentions=discord.AllowedMentions(users=True)
+        )
+
+        def progress_callback(progress_text):
+            asyncio.run_coroutine_threadsafe(
+                message.channel.send(progress_text),
+                bot.loop
+            )
+
         try:
-            result = await asyncio.to_thread(full_search_tc_worlds_text, query)
+            result = await asyncio.to_thread(
+                full_search_tc_worlds_text,
+                query,
+                progress_callback
+            )
 
             if len(result) > 1900:
                 chunks = [result[i:i + 1900] for i in range(0, len(result), 1900)]

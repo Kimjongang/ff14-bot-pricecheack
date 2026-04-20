@@ -13,6 +13,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 TC_SEARCH_URL = "https://tc-ffxiv-item-search-service.onrender.com/items/search"
+XIVAPI_SEARCH_URL = "https://v2.xivapi.com/api/search"
 UNIVERSALIS_URL = "https://universalis.app/api/v2"
 
 TC_WORLDS = [
@@ -46,14 +47,56 @@ def search_tc(query):
     return r.json()
 
 
+def search_en(query):
+    params = {
+        "sheets": "Item",
+        "query": f'+Name~"{query}"',
+        "language": "en",
+        "limit": 100,
+        "fields": "Name"
+    }
+
+    r = requests.get(XIVAPI_SEARCH_URL, params=params, timeout=20)
+    r.raise_for_status()
+    return r.json()
+
+
+def is_english_query(query):
+    query = query.strip()
+    return re.search(r"[\u4e00-\u9fff]", query) is None
+
+
 def pick_items(data, query, top_n=3):
-    items = data.get("items", [])
+    if "items" in data:
+        items = data.get("items", [])
 
-    exact = [x for x in items if x.get("name") == query]
-    if exact:
-        return exact[:top_n]
+        exact = [x for x in items if x.get("name") == query]
+        if exact:
+            return exact[:top_n]
 
-    return items[:top_n]
+        return items[:top_n]
+
+    if "results" in data:
+        results = data.get("results", [])
+
+        normalized = []
+        for x in results:
+            row_id = x.get("row_id")
+            name = x.get("fields", {}).get("Name")
+
+            if row_id and name:
+                normalized.append({
+                    "id": row_id,
+                    "name": name
+                })
+
+        exact = [x for x in normalized if x.get("name", "").lower() == query.lower()]
+        if exact:
+            return exact[:top_n]
+
+        return normalized[:top_n]
+
+    return []
 
 
 def get_price(world_name, item_id, listings=5):
@@ -100,7 +143,11 @@ def format_all_worlds(world_data):
 
 
 def full_search_tc_worlds_text(query):
-    data = search_tc(query)
+    if is_english_query(query):
+        data = search_en(query)
+    else:
+        data = search_tc(query)
+
     picked = pick_items(data, query, top_n=3)
 
     if not picked:

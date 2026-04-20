@@ -178,16 +178,8 @@ def extract_query(text):
 
 
 def is_price_query(text):
-    keywords = ["查價", "價格", "物價", "查"]
     text = text.strip()
-
-    if any(k in text for k in keywords):
-        return True
-
-    if len(text) <= 20:
-        return True
-
-    return False
+    return bool(text)
 
 
 @bot.event
